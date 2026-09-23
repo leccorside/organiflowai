@@ -1,0 +1,4 @@
+{
+  "extends": "@aom/config/tsconfig/library.json",
+  "include": ["src"]
+}

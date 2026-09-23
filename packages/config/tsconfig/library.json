@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "declaration": true,
+    "noEmit": true,
+    // O tsup injeta "baseUrl" na geração de .d.ts, opção depreciada no TypeScript 6.
+    // Nenhuma configuração do projeto usa opções depreciadas; remover ao migrar o bundler.
+    "ignoreDeprecations": "6.0"
+  }
+}

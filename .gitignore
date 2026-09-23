@@ -1,0 +1,30 @@
+# Dependências
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+*.tsbuildinfo
+
+# Testes
+coverage/
+playwright-report/
+test-results/
+
+# Variáveis de ambiente (nunca versionar credenciais reais)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

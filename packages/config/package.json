@@ -1,0 +1,12 @@
+{
+  "name": "@aom/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Configurações compartilhadas (TypeScript) do monorepo",
+  "exports": {
+    "./tsconfig/*": "./tsconfig/*"
+  },
+  "files": [
+    "tsconfig"
+  ]
+}
