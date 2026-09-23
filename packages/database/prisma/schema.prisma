@@ -1,0 +1,114 @@
+// Schema principal (MySQL 8.4). A URL de conexão fica em prisma.config.ts.
+//
+// Convenções:
+// - IDs: UUID v7 (ordenado no tempo → inserções sequenciais no índice clusterizado do InnoDB).
+// - Tabelas e colunas em snake_case (@@map/@map); modelos e campos em PascalCase/camelCase.
+// - Datas sempre em UTC (servidor MySQL em +00:00; Prisma grava UTC).
+// - Soft delete via `deletedAt` nas entidades de negócio; filtrar `deletedAt: null` nas consultas.
+// - Enums devem espelhar as constantes de @aom/types (verificado por teste).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+/// Papéis dentro de uma organização. Espelha ORGANIZATION_ROLES de @aom/types.
+enum OrganizationRole {
+  ADMIN
+  MANAGER
+  EDITOR
+  VIEWER
+}
+
+model User {
+  id              String    @id @default(uuid(7)) @db.Char(36)
+  email           String    @unique @db.VarChar(320)
+  name            String    @db.VarChar(120)
+  /// Hash argon2id (inclui algoritmo e parâmetros). Nunca armazenar senha em texto.
+  passwordHash    String    @map("password_hash") @db.VarChar(255)
+  /// Papel de plataforma (SUPER_ADMIN), independente das organizações.
+  isSuperAdmin    Boolean   @default(false) @map("is_super_admin")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  memberships OrganizationMember[]
+  auditLogs   AuditLog[]
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Organization {
+  id        String    @id @default(uuid(7)) @db.Char(36)
+  name      String    @db.VarChar(160)
+  slug      String    @unique @db.VarChar(80)
+  /// Timezone IANA usado para exibição e agendamento (ex.: America/Sao_Paulo).
+  timezone  String    @default("UTC") @db.VarChar(64)
+  locale    String    @default("pt-BR") @db.VarChar(10)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  members   OrganizationMember[]
+  auditLogs AuditLog[]
+
+  @@index([deletedAt])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String           @id @default(uuid(7)) @db.Char(36)
+  organizationId String           @map("organization_id") @db.Char(36)
+  userId         String           @map("user_id") @db.Char(36)
+  role           OrganizationRole @default(VIEWER)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+/// Registro imutável de ações relevantes (append-only). Nunca gravar secrets em before/after.
+model AuditLog {
+  id             String   @id @default(uuid(7)) @db.Char(36)
+  actorUserId    String?  @map("actor_user_id") @db.Char(36)
+  organizationId String?  @map("organization_id") @db.Char(36)
+  action         String   @db.VarChar(100)
+  resource       String   @db.VarChar(100)
+  resourceId     String?  @map("resource_id") @db.VarChar(64)
+  before         Json?
+  after          Json?
+  ip             String?  @db.VarChar(45)
+  userAgent      String?  @map("user_agent") @db.VarChar(512)
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([resource, resourceId])
+  @@map("audit_logs")
+}
+
+/// Feature flags globais. Chaves espelham FEATURE_FLAGS de @aom/types.
+model FeatureFlag {
+  key         String   @id @db.VarChar(100)
+  enabled     Boolean  @default(false)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("feature_flags")
+}

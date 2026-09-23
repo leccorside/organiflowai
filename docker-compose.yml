@@ -21,6 +21,8 @@ services:
       - '127.0.0.1:${MYSQL_HOST_PORT:-3307}:3306'
     volumes:
       - mysql_data:/var/lib/mysql
+      # Cria os bancos <db>_test e <db>_shadow na primeira inicialização do volume.
+      - ./docker/mysql/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # -h 127.0.0.1 força TCP: só fica saudável após o fim da inicialização
       # (o servidor temporário do entrypoint roda sem rede).
@@ -53,8 +55,18 @@ services:
       context: .
       target: dev
     working_dir: /workspace
+    # Variáveis repassadas explicitamente do .env (Prisma 7 não lê .env sozinho).
     environment:
       TZ: UTC
+      DATABASE_URL: ${DATABASE_URL:-}
+      SHADOW_DATABASE_URL: ${SHADOW_DATABASE_URL:-}
+      TEST_DATABASE_URL: ${TEST_DATABASE_URL:-}
+      DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL: ${DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL:-false}
+      REDIS_URL: ${REDIS_URL:-}
+      TEST_REDIS_URL: ${TEST_REDIS_URL:-}
+      SEED_SUPER_ADMIN_EMAIL: ${SEED_SUPER_ADMIN_EMAIL:-}
+      SEED_SUPER_ADMIN_PASSWORD: ${SEED_SUPER_ADMIN_PASSWORD:-}
+      SEED_SUPER_ADMIN_NAME: ${SEED_SUPER_ADMIN_NAME:-}
     volumes:
       - .:/workspace
       - pnpm_store:/pnpm/store
@@ -64,6 +76,7 @@ services:
       - node_modules_config:/workspace/packages/config/node_modules
       - node_modules_types:/workspace/packages/types/node_modules
       - node_modules_shared:/workspace/packages/shared/node_modules
+      - node_modules_database:/workspace/packages/database/node_modules
     stdin_open: true
     tty: true
 
@@ -75,3 +88,4 @@ volumes:
   node_modules_config:
   node_modules_types:
   node_modules_shared:
+  node_modules_database:

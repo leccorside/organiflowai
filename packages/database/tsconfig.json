@@ -1,0 +1,9 @@
+{
+  "extends": "@aom/config/tsconfig/library.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // O client gerado pelo Prisma importa arquivos com extensão .ts.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "prisma.config.ts", "vitest.config.ts", "vitest.integration.config.ts"]
+}

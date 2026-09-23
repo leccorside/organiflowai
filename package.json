@@ -11,11 +11,17 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:integration": "pnpm -r --if-present test:integration",
+    "db:generate": "pnpm --filter @aom/database db:generate",
+    "db:migrate:dev": "pnpm --filter @aom/database db:migrate:dev",
+    "db:migrate:deploy": "pnpm --filter @aom/database db:migrate:deploy",
+    "db:migrate:status": "pnpm --filter @aom/database db:migrate:status",
+    "db:seed": "pnpm --filter @aom/database db:seed",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "validate": "pnpm format:check && pnpm lint && pnpm build && pnpm typecheck && pnpm test"
+    "validate": "pnpm format:check && pnpm build && pnpm lint && pnpm typecheck && pnpm test"
   },
   "packageManager": "pnpm@12.6.0+sha512.3ef68f951cb111ac204b4a5a16f0b2ddf0da56a96e0413e81d855d9f0b55ef926714709028e1cd00c405c2c5fb7b9e8ec4dc46777c805d0373c2f2ff00fd20ec",
   "devDependencies": {

@@ -6,6 +6,8 @@ import {
   CIRCUIT_STATES,
   CONTENT_STATUSES,
   DEFAULT_AI_PROVIDER_PRIORITY,
+  FEATURE_FLAGS,
+  ORGANIZATION_ROLES,
   QUEUE_NAMES,
   ROLES,
 } from './index';
@@ -21,8 +23,20 @@ describe('@aom/types', () => {
     ['AI_PROVIDERS', AI_PROVIDERS],
     ['CIRCUIT_STATES', CIRCUIT_STATES],
     ['QUEUE_NAMES', Object.values(QUEUE_NAMES)],
+    ['ORGANIZATION_ROLES', ORGANIZATION_ROLES],
+    ['FEATURE_FLAGS', Object.values(FEATURE_FLAGS)],
   ])('%s não possui valores duplicados', (_name, values) => {
     expect(hasDuplicates(values)).toBe(false);
+  });
+
+  it('papéis de organização são todos os perfis exceto SUPER_ADMIN', () => {
+    expect([...ORGANIZATION_ROLES]).toEqual(ROLES.filter((role) => role !== 'SUPER_ADMIN'));
+  });
+
+  it('chaves de feature flag são iguais aos valores', () => {
+    for (const [key, value] of Object.entries(FEATURE_FLAGS)) {
+      expect(value).toBe(key);
+    }
   });
 
   it('prioridade padrão contém todos os provedores exatamente uma vez', () => {

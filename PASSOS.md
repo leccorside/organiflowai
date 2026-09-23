@@ -11,8 +11,8 @@ Regras:
 
 ---
 
-Último passo concluído: PASSO 2
-Próximo passo: PASSO 3
+Último passo concluído: PASSO 3
+Próximo passo: PASSO 4
 
 ---
 
@@ -20,7 +20,7 @@ Próximo passo: PASSO 3
 
 - [x] PASSO 1 — Planejamento, arquitetura e estrutura inicial
 - [x] PASSO 2 — Docker e ambiente de desenvolvimento
-- [ ] PASSO 3 — Banco MySQL, Prisma e Redis
+- [x] PASSO 3 — Banco MySQL, Prisma e Redis
 - [ ] PASSO 4 — Backend base e padrões arquiteturais
 - [ ] PASSO 5 — Frontend base e Design System
 - [ ] PASSO 6 — Autenticação e usuários
@@ -89,16 +89,25 @@ Próximo passo: PASSO 3
 
 ### PASSO 3 — Banco MySQL, Prisma e Redis
 
-- [ ] Configurar Prisma com MySQL 8
-- [ ] Schema inicial (User, Organization, OrganizationMember, Role, Permission, AuditLog, FeatureFlag, SystemSetting)
-- [ ] Convenções: UUID, timestamps, soft delete, índices, constraints
-- [ ] Migrations e seeds (Super Admin, Organização Demo, Marca Demo, Campanha Demo — credenciais via env)
-- [ ] Cliente Redis compartilhado (cache, locks distribuídos, rate limit)
-- [ ] Testes de conexão e seeds
+- [x] Pacote `@aom/database` (somente servidor) — ADR-011
+- [x] Configurar Prisma 7.10 com MySQL 8.4 (adapter `@prisma/adapter-mariadb`, `prisma.config.ts`) — ADR-012
+- [x] Schema inicial: User, Organization, OrganizationMember, AuditLog, FeatureFlag — ADR-014/015
+- [x] Convenções: UUID v7, snake_case, timestamps UTC, soft delete, índices, constraints, FKs — ADR-013
+- [x] Migration `init` versionada
+- [x] Seed idempotente: Super Admin (credenciais via env, validadas), Organização Demo, feature flags
+- [x] Utilitários Redis: conexão, lock distribuído, cache, rate limit
+- [x] Bancos `_test`/`_shadow` criados na 1ª inicialização do MySQL
+- [x] `@aom/types`: `ORGANIZATION_ROLES` e `FEATURE_FLAGS`
+- [x] Testes unitários e de integração (MySQL e Redis reais) — ADR-016
+- Movido para o PASSO 7: tabelas Role/Permission (RBAC granular) — ADR-015
+- Movido para o PASSO 8: seed da Marca Demo (junto com a tabela Brand) — ADR-015
+- Movido para o PASSO 9: tabela SystemSetting — ADR-015
+- Movido para o PASSO 21: seed da Campanha Demo (junto com a tabela Campaign) — ADR-015
 
 ### PASSO 4 — Backend base e padrões arquiteturais
 
 - [ ] Bootstrap NestJS modular
+- [ ] Integração com `@aom/database` (PrismaService/RedisService com ciclo de vida do Nest)
 - [ ] Configuração tipada e validada de env
 - [ ] Logger estruturado (JSON) com redaction de secrets
 - [ ] Filters globais de erro, interceptors, pipes de validação
@@ -137,7 +146,7 @@ Próximo passo: PASSO 3
 
 - [ ] Organizações multi-tenant e membros
 - [ ] Perfis SUPER_ADMIN, ADMIN, MANAGER, EDITOR, VIEWER
-- [ ] Permissões granulares (`campaign.create`, `content.publish`, `ai.configure`, ...)
+- [ ] Tabelas Role/Permission (movidas do PASSO 3) e permissões granulares (`campaign.create`, `content.publish`, `ai.configure`, ...)
 - [ ] Guards de permissão e escopo por organização
 - [ ] Convites e gerenciamento de membros
 - [ ] Testes de permissões
@@ -145,6 +154,7 @@ Próximo passo: PASSO 3
 ### PASSO 8 — Marcas e contexto da empresa
 
 - [ ] Entidade Brand e Brand Profile
+- [ ] Seed da Marca Demo (movido do PASSO 3)
 - [ ] Onboarding inteligente (empresa, público, persona, tom, concorrentes, palavras proibidas, CTA...)
 - [ ] BrandMemory (contexto persistente)
 - [ ] Telas de marca e onboarding
@@ -153,7 +163,7 @@ Próximo passo: PASSO 3
 ### PASSO 9 — Administração Master
 
 - [ ] Painel SUPER_ADMIN (usuários, organizações, marcas, sistema)
-- [ ] Configurações do sistema e feature flags
+- [ ] Tabela SystemSetting (movida do PASSO 3), configurações do sistema e gestão das feature flags
 - [ ] Visualização de filas/jobs e logs
 - [ ] Testes
 
@@ -228,6 +238,7 @@ Próximo passo: PASSO 3
 ### PASSO 21 — Campanhas
 
 - [ ] CRUD de campanhas com objetivo, período, canais, audiência, frequência, temas, CTA, links
+- [ ] Seed da Campanha Demo (movido do PASSO 3)
 - [ ] UTM Builder
 - [ ] Regras de IA por campanha
 - [ ] Modo MANUAL / ASSISTIDO / AUTOMÁTICO
@@ -336,3 +347,4 @@ Próximo passo: PASSO 3
 - 2026-09-23 — Roadmap inicial criado a partir do `PROMPT.md` (seção 84). Nenhum passo iniciado.
 - 2026-09-23 (PASSO 1) — Removido `apps/worker` da estrutura: worker e scheduler passam a ser entrypoints separados de `apps/api` (mesma base de código, containers distintos). Motivo: ambos dependem dos mesmos módulos de domínio (IA, publicações, Prisma); um app separado exigiria duplicar ou extrair esses módulos para pacotes. Ajustado o PASSO 2 (Dockerfiles para api e web). Ver ADR-003 em `DOCUMENTACAO.md`.
 - 2026-09-23 (PASSO 2) — Serviços de aplicação (`backend`, `worker`, `scheduler`, `frontend`) e respectivos targets do `Dockerfile`/hot reload movidos do PASSO 2 para os PASSOS 4 e 5, onde os apps são criados. Motivo: dependência técnica — não há app para empacotar no PASSO 2, e containers sem app seriam placeholders (vedado pela especificação). O PASSO 2 entregou a infraestrutura validável (MySQL, Redis, imagem do monorepo e serviço `tools`). Ver ADR-008.
+- 2026-09-23 (PASSO 3) — Camada de dados criada como `packages/database` (`@aom/database`), pois `apps/api` só existe a partir do PASSO 4 (ADR-011). Schema tornado incremental (ADR-015): tabelas Role/Permission movidas para o PASSO 7, SystemSetting para o PASSO 9; seeds da Marca Demo e da Campanha Demo movidos para os PASSOS 8 e 21, junto com as tabelas Brand e Campaign. Motivo: evitar esquema especulativo sem uso. PASSO 4 recebeu o subitem de integração do NestJS com `@aom/database`.

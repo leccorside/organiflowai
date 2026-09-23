@@ -1,0 +1,51 @@
+{
+  "name": "@aom/database",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Camada de dados do backend: Prisma (MySQL), migrations, seeds e utilitários Redis",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "prisma"
+  ],
+  "scripts": {
+    "build": "prisma generate && tsup src/index.ts --format esm,cjs --dts --clean --shims",
+    "typecheck": "prisma generate && tsc --noEmit",
+    "test": "prisma generate && vitest run",
+    "test:integration": "prisma generate && vitest run --config vitest.integration.config.ts",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:seed": "prisma db seed"
+  },
+  "dependencies": {
+    "@aom/types": "workspace:*",
+    "@prisma/adapter-mariadb": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "ioredis": "^6.0.0",
+    "mariadb": "3.4.5"
+  },
+  "devDependencies": {
+    "@aom/config": "workspace:*",
+    "@node-rs/argon2": "^2.2.1",
+    "@types/node": "^24.13.6",
+    "prisma": "7.10.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
+}
