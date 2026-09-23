@@ -1,3 +1,4 @@
+export * from './errors';
 export * from './generated/prisma/client';
 export * from './prisma';
 export * from './redis/cache';

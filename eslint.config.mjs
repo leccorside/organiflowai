@@ -24,6 +24,14 @@ export default defineConfig(
     extends: [tseslint.configs.disableTypeChecked],
   },
   {
+    // NestJS: com emitDecoratorMetadata, classes injetadas precisam de import de valor.
+    // Estas opções fazem o consistent-type-imports não converter esses imports em `import type`.
+    files: ['apps/api/**/*.ts'],
+    languageOptions: {
+      parserOptions: { emitDecoratorMetadata: true, experimentalDecorators: true },
+    },
+  },
+  {
     rules: {
       // Logs devem ser estruturados (logger da aplicação), nunca console.
       'no-console': 'error',

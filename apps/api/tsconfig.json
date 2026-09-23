@@ -1,0 +1,15 @@
+{
+  "extends": "@aom/config/tsconfig/base.json",
+  "compilerOptions": {
+    // NestJS 12 é ESM-only: imports relativos usam a extensão .js.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // Injeção de dependência do Nest depende de decorators + metadata de tipos.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+    "noEmit": true,
+    "types": ["node", "jest"]
+  },
+  "include": ["src", "test"]
+}

@@ -11,8 +11,8 @@ Regras:
 
 ---
 
-Último passo concluído: PASSO 3
-Próximo passo: PASSO 4
+Último passo concluído: PASSO 4
+Próximo passo: PASSO 5
 
 ---
 
@@ -21,7 +21,7 @@ Próximo passo: PASSO 4
 - [x] PASSO 1 — Planejamento, arquitetura e estrutura inicial
 - [x] PASSO 2 — Docker e ambiente de desenvolvimento
 - [x] PASSO 3 — Banco MySQL, Prisma e Redis
-- [ ] PASSO 4 — Backend base e padrões arquiteturais
+- [x] PASSO 4 — Backend base e padrões arquiteturais
 - [ ] PASSO 5 — Frontend base e Design System
 - [ ] PASSO 6 — Autenticação e usuários
 - [ ] PASSO 7 — Organizações, equipes e RBAC
@@ -106,18 +106,18 @@ Próximo passo: PASSO 4
 
 ### PASSO 4 — Backend base e padrões arquiteturais
 
-- [ ] Bootstrap NestJS modular
-- [ ] Integração com `@aom/database` (PrismaService/RedisService com ciclo de vida do Nest)
-- [ ] Configuração tipada e validada de env
-- [ ] Logger estruturado (JSON) com redaction de secrets
-- [ ] Filters globais de erro, interceptors, pipes de validação
-- [ ] Helmet, CORS restritivo, rate limiting
-- [ ] Endpoints `/health`, `/health/live`, `/health/ready`
-- [ ] Padrão de repositories/services, paginação e respostas
-- [ ] Infraestrutura BullMQ básica (registro das filas)
-- [ ] Entrypoints `main.ts`, `main.worker.ts`, `main.scheduler.ts` (ADR-003)
-- [ ] Targets no `Dockerfile` (dev e produção) e serviços `backend`, `worker`, `scheduler` no compose, com healthcheck e hot reload (polling no Windows)
-- [ ] Testes Jest base
+- [x] Bootstrap NestJS 12 modular (ESM, Express) — ADR-017/018
+- [x] Integração com `@aom/database` (PrismaService/RedisService com ciclo de vida e shutdown ordenado)
+- [x] Configuração tipada e validada de env (Zod, fail fast, sem ecoar valores)
+- [x] Logger estruturado (JSON, pino) com redaction de secrets e request id
+- [x] Filter global de erros (`ApiErrorBody` + códigos), interceptor de timeout, pipe de validação Zod (Standard Schema) — ADR-020/024
+- [x] Helmet, CORS restritivo, rate limiting com storage Redis — ADR-021
+- [x] Endpoints `/health`, `/health/live`, `/health/ready`
+- [x] Padrão repository → service (módulo feature-flags com cache), paginação e respostas
+- [x] Infraestrutura BullMQ (registro das 9 filas, retry/backoff/retenção configuráveis)
+- [x] Entrypoints `main.ts`, `main.worker.ts`, `main.scheduler.ts` + heartbeat/healthcheck — ADR-003/023
+- [x] Targets `api-build`/`api` no `Dockerfile` e serviços `setup`, `backend`, `worker`, `scheduler` no compose, com healthcheck e hot reload (polling) — ADR-022
+- [x] Testes Jest (ESM) unitários e de integração — ADR-019
 
 ### PASSO 5 — Frontend base e Design System
 
@@ -323,6 +323,7 @@ Próximo passo: PASSO 4
 ### PASSO 36 — Otimizações
 
 - [ ] Performance de queries, cache, bundle do frontend
+- [ ] Reduzir a imagem `api` (~770 MB): evitar o CLI do Prisma (peer do `@prisma/client`) no deploy de produção
 
 ### PASSO 37 — Hardening de segurança
 
@@ -339,6 +340,7 @@ Próximo passo: PASSO 4
 ### PASSO 40 — Preparação para produção
 
 - [ ] Builds de produção, pipeline CI (lint, typecheck, tests, build), backup/restauração, checklist de deploy (sem deploy sem autorização)
+- [ ] Execução de migrations em produção (job/imagem dedicada), TLS no MySQL e senha no Redis
 
 ---
 
@@ -348,3 +350,4 @@ Próximo passo: PASSO 4
 - 2026-09-23 (PASSO 1) — Removido `apps/worker` da estrutura: worker e scheduler passam a ser entrypoints separados de `apps/api` (mesma base de código, containers distintos). Motivo: ambos dependem dos mesmos módulos de domínio (IA, publicações, Prisma); um app separado exigiria duplicar ou extrair esses módulos para pacotes. Ajustado o PASSO 2 (Dockerfiles para api e web). Ver ADR-003 em `DOCUMENTACAO.md`.
 - 2026-09-23 (PASSO 2) — Serviços de aplicação (`backend`, `worker`, `scheduler`, `frontend`) e respectivos targets do `Dockerfile`/hot reload movidos do PASSO 2 para os PASSOS 4 e 5, onde os apps são criados. Motivo: dependência técnica — não há app para empacotar no PASSO 2, e containers sem app seriam placeholders (vedado pela especificação). O PASSO 2 entregou a infraestrutura validável (MySQL, Redis, imagem do monorepo e serviço `tools`). Ver ADR-008.
 - 2026-09-23 (PASSO 3) — Camada de dados criada como `packages/database` (`@aom/database`), pois `apps/api` só existe a partir do PASSO 4 (ADR-011). Schema tornado incremental (ADR-015): tabelas Role/Permission movidas para o PASSO 7, SystemSetting para o PASSO 9; seeds da Marca Demo e da Campanha Demo movidos para os PASSOS 8 e 21, junto com as tabelas Brand e Campaign. Motivo: evitar esquema especulativo sem uso. PASSO 4 recebeu o subitem de integração do NestJS com `@aom/database`.
+- 2026-09-23 (PASSO 4) — Sem mudança de escopo entre passos. Registrado como pendência dos PASSOS 36/40: reduzir o tamanho da imagem `api` (~770 MB, CLI do Prisma incluído via peer dependency) e definir a execução de migrations em produção.

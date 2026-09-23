@@ -1,7 +1,69 @@
 # Ambiente de desenvolvimento — `docker compose up -d`
-# Os serviços backend/worker/scheduler (PASSO 4) e frontend (PASSO 5) são adicionados
-# quando os respectivos apps existirem.
+#   mysql, redis            → infraestrutura
+#   setup                   → instala dependências, compila pacotes e aplica migrations (executa e sai)
+#   backend/worker/scheduler → apps/api em modo dev (hot reload por polling), após o setup
+#   tools (perfil)          → comandos avulsos: `docker compose run --rm tools <comando>`
+# O serviço frontend é adicionado no PASSO 5.
 name: aom
+
+# Código montado do host + node_modules em volumes nomeados (Linux), nunca no bind mount:
+# evita binários incompatíveis com o SO do host e a lentidão de I/O no Windows/macOS.
+x-workspace-volumes: &workspace-volumes
+  - .:/workspace
+  - pnpm_store:/pnpm/store
+  - node_modules:/workspace/node_modules
+  - node_modules_config:/workspace/packages/config/node_modules
+  - node_modules_types:/workspace/packages/types/node_modules
+  - node_modules_shared:/workspace/packages/shared/node_modules
+  - node_modules_database:/workspace/packages/database/node_modules
+  - node_modules_api:/workspace/apps/api/node_modules
+
+# Variáveis da aplicação, repassadas explicitamente do .env (vazias = padrão da aplicação).
+x-app-env: &app-env
+  NODE_ENV: development
+  TZ: UTC
+  # Versão do Prisma é fixada (ADR-012); o aviso de atualização só polui os logs.
+  PRISMA_HIDE_UPDATE_MESSAGE: 'true'
+  PORT: '3000'
+  LOG_LEVEL: ${LOG_LEVEL:-}
+  DATABASE_URL: ${DATABASE_URL:-}
+  DATABASE_CONNECTION_LIMIT: ${DATABASE_CONNECTION_LIMIT:-}
+  DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL: ${DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL:-false}
+  REDIS_URL: ${REDIS_URL:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
+  TRUST_PROXY: ${TRUST_PROXY:-}
+  HTTP_REQUEST_TIMEOUT_MS: ${HTTP_REQUEST_TIMEOUT_MS:-}
+  HTTP_BODY_LIMIT: ${HTTP_BODY_LIMIT:-}
+  RATE_LIMIT_TTL_MS: ${RATE_LIMIT_TTL_MS:-}
+  RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-}
+  QUEUE_DEFAULT_ATTEMPTS: ${QUEUE_DEFAULT_ATTEMPTS:-}
+  QUEUE_BACKOFF_DELAY_MS: ${QUEUE_BACKOFF_DELAY_MS:-}
+  QUEUE_REMOVE_ON_COMPLETE: ${QUEUE_REMOVE_ON_COMPLETE:-}
+  QUEUE_REMOVE_ON_FAIL: ${QUEUE_REMOVE_ON_FAIL:-}
+  HEARTBEAT_INTERVAL_MS: ${HEARTBEAT_INTERVAL_MS:-}
+  HEARTBEAT_TTL_MS: ${HEARTBEAT_TTL_MS:-}
+  HEALTH_CHECK_TIMEOUT_MS: ${HEALTH_CHECK_TIMEOUT_MS:-}
+  FEATURE_FLAGS_CACHE_TTL_SECONDS: ${FEATURE_FLAGS_CACHE_TTL_SECONDS:-}
+
+x-dev-image: &dev-image
+  build:
+    context: .
+    target: dev
+  working_dir: /workspace
+  volumes: *workspace-volumes
+
+x-api-dev: &api-dev
+  <<: *dev-image
+  environment:
+    <<: *app-env
+  restart: unless-stopped
+  depends_on:
+    setup:
+      condition: service_completed_successfully
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
 
 services:
   mysql:
@@ -47,36 +109,65 @@ services:
       timeout: 3s
       retries: 10
 
-  # Ferramentas do monorepo (pnpm, lint, testes) sem Node no host.
-  # Uso: docker compose run --rm tools pnpm install
-  tools:
-    profiles: [tools]
-    build:
-      context: .
-      target: dev
-    working_dir: /workspace
-    # Variáveis repassadas explicitamente do .env (Prisma 7 não lê .env sozinho).
+  # Executa uma vez por `up`: dependências, build dos pacotes do workspace e migrations.
+  # Serializa a instalação (evita que backend/worker/scheduler instalem em paralelo).
+  setup:
+    <<: *dev-image
     environment:
-      TZ: UTC
-      DATABASE_URL: ${DATABASE_URL:-}
+      <<: *app-env
+    command:
+      - sh
+      - -c
+      - pnpm install --frozen-lockfile && pnpm --filter "@aom/api^..." build && pnpm db:migrate:deploy
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: 'no'
+
+  backend:
+    <<: *api-dev
+    command: pnpm --filter @aom/api dev
+    ports:
+      - '127.0.0.1:${API_PORT:-3000}:3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:3000/health/live']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  worker:
+    <<: *api-dev
+    command: pnpm --filter @aom/api dev:worker
+    healthcheck:
+      test: ['CMD-SHELL', 'pnpm --silent --filter @aom/api healthcheck:dev worker']
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 60s
+
+  scheduler:
+    <<: *api-dev
+    command: pnpm --filter @aom/api dev:scheduler
+    healthcheck:
+      test: ['CMD-SHELL', 'pnpm --silent --filter @aom/api healthcheck:dev scheduler']
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 60s
+
+  # Ferramentas do monorepo (pnpm, lint, testes, migrations) sem Node no host.
+  tools:
+    <<: *dev-image
+    profiles: [tools]
+    environment:
+      <<: *app-env
       SHADOW_DATABASE_URL: ${SHADOW_DATABASE_URL:-}
       TEST_DATABASE_URL: ${TEST_DATABASE_URL:-}
-      DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL: ${DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL:-false}
-      REDIS_URL: ${REDIS_URL:-}
       TEST_REDIS_URL: ${TEST_REDIS_URL:-}
       SEED_SUPER_ADMIN_EMAIL: ${SEED_SUPER_ADMIN_EMAIL:-}
       SEED_SUPER_ADMIN_PASSWORD: ${SEED_SUPER_ADMIN_PASSWORD:-}
       SEED_SUPER_ADMIN_NAME: ${SEED_SUPER_ADMIN_NAME:-}
-    volumes:
-      - .:/workspace
-      - pnpm_store:/pnpm/store
-      # node_modules ficam em volumes nomeados (Linux), nunca no bind mount do host:
-      # evita binários incompatíveis com o SO do host e a lentidão de I/O no Windows/macOS.
-      - node_modules:/workspace/node_modules
-      - node_modules_config:/workspace/packages/config/node_modules
-      - node_modules_types:/workspace/packages/types/node_modules
-      - node_modules_shared:/workspace/packages/shared/node_modules
-      - node_modules_database:/workspace/packages/database/node_modules
     stdin_open: true
     tty: true
 
@@ -89,3 +180,4 @@ volumes:
   node_modules_types:
   node_modules_shared:
   node_modules_database:
+  node_modules_api:

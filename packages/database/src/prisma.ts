@@ -47,10 +47,20 @@ export function toPoolConfig(
   };
 }
 
+/**
+ * Adapter do driver MariaDB para o Prisma. Exposto para quem estende `PrismaClient`
+ * (ex.: `PrismaService` do NestJS: `super({ adapter: createPrismaAdapter(url) })`).
+ */
+export function createPrismaAdapter(
+  databaseUrl: string,
+  options: DatabaseConnectionOptions = {},
+): PrismaMariaDb {
+  return new PrismaMariaDb(toPoolConfig(databaseUrl, options));
+}
+
 export function createPrismaClient(
   databaseUrl: string,
   options: DatabaseConnectionOptions = {},
 ): PrismaClient {
-  const adapter = new PrismaMariaDb(toPoolConfig(databaseUrl, options));
-  return new PrismaClient({ adapter });
+  return new PrismaClient({ adapter: createPrismaAdapter(databaseUrl, options) });
 }

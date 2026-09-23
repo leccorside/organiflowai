@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AI_PROVIDERS,
+  API_ERROR_CODES,
   AUTONOMY_MODES,
   CHANNEL_TYPES,
   CIRCUIT_STATES,
@@ -25,6 +26,7 @@ describe('@aom/types', () => {
     ['QUEUE_NAMES', Object.values(QUEUE_NAMES)],
     ['ORGANIZATION_ROLES', ORGANIZATION_ROLES],
     ['FEATURE_FLAGS', Object.values(FEATURE_FLAGS)],
+    ['API_ERROR_CODES', API_ERROR_CODES],
   ])('%s não possui valores duplicados', (_name, values) => {
     expect(hasDuplicates(values)).toBe(false);
   });

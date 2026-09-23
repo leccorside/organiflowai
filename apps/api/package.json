@@ -1,0 +1,57 @@
+{
+  "name": "@aom/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backend NestJS (API HTTP, worker e scheduler)",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "swc src -d dist --strip-leading-paths --ignore \"**/*.spec.ts\"",
+    "typecheck": "tsc --noEmit",
+    "dev": "SWCRC=true nodemon --legacy-watch --watch src --ext ts --exec \"node --import @swc-node/register/esm-register src/main.ts\"",
+    "dev:worker": "SWCRC=true nodemon --legacy-watch --watch src --ext ts --exec \"node --import @swc-node/register/esm-register src/main.worker.ts\"",
+    "dev:scheduler": "SWCRC=true nodemon --legacy-watch --watch src --ext ts --exec \"node --import @swc-node/register/esm-register src/main.scheduler.ts\"",
+    "healthcheck:dev": "SWCRC=true node --import @swc-node/register/esm-register src/healthcheck.ts",
+    "start": "node dist/main.js",
+    "start:worker": "node dist/main.worker.js",
+    "start:scheduler": "node dist/main.scheduler.js",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.integration.config.js"
+  },
+  "dependencies": {
+    "@aom/database": "workspace:*",
+    "@aom/types": "workspace:*",
+    "@nestjs/bullmq": "^12.0.0",
+    "@nestjs/common": "~12.0.0",
+    "@nestjs/core": "~12.0.0",
+    "@nestjs/platform-express": "~12.0.0",
+    "@nestjs/throttler": "^6.7.0",
+    "bullmq": "^6.3.8",
+    "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
+    "nestjs-pino": "^5.2.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@aom/config": "workspace:*",
+    "@nestjs/testing": "~12.0.0",
+    "@swc-node/register": "^1.12.1",
+    "@swc/cli": "^0.8.1",
+    "@swc/core": "^1.16.2",
+    "@swc/jest": "^0.2.39",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.13.6",
+    "@types/supertest": "^7.2.1",
+    "jest": "^30.5.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.3.0",
+    "typescript": "~6.0.3"
+  }
+}

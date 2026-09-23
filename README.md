@@ -23,20 +23,30 @@ O `docker compose` falha com mensagem explícita se as variáveis obrigatórias 
 ## Primeira execução
 
 ```bash
-docker compose up -d --wait                            # MySQL + Redis saudáveis
-docker compose run --rm tools pnpm install             # dependências (volumes Docker)
-docker compose run --rm tools pnpm db:migrate:deploy   # cria as tabelas
-docker compose run --rm tools pnpm db:seed             # Super Admin + Organização Demo
+docker compose up -d --wait                  # MySQL, Redis, setup (install + build + migrations), backend, worker, scheduler
+docker compose run --rm tools pnpm db:seed   # Super Admin + Organização Demo (uma vez)
+curl http://127.0.0.1:3000/health            # API saudável
 ```
+
+A primeira subida instala as dependências nos volumes Docker (pode levar alguns minutos); as seguintes são rápidas.
 
 ## Comandos Docker
 
 ```bash
-docker compose up -d            # sobe MySQL e Redis (aguarda com: --wait)
-docker compose ps               # status e healthchecks
-docker compose logs -f mysql    # logs de um serviço
-docker compose down             # para os serviços (mantém os dados)
-docker compose down -v          # para e APAGA os volumes (dados do banco e do Redis)
+docker compose up -d --wait         # sobe tudo e aguarda os healthchecks
+docker compose ps                   # status e healthchecks
+docker compose logs -f backend      # logs de um serviço (JSON)
+docker compose restart backend      # reinicia um serviço
+docker compose down                 # para os serviços (mantém os dados)
+docker compose down -v              # para e APAGA os volumes (banco, Redis e node_modules)
+```
+
+Serviços: `mysql`, `redis`, `setup` (executa e sai), `backend` (API HTTP), `worker` (filas), `scheduler` (agendamentos). Alterações em `apps/api/src` recarregam automaticamente (hot reload por polling). Alterações em `packages/*` exigem `docker compose run --rm tools pnpm --filter <pacote> build` e `docker compose restart backend worker scheduler`.
+
+Imagem de produção da API (a mesma para os 3 processos):
+
+```bash
+docker build --target api -t aom-api .
 ```
 
 Ferramentas do monorepo sem Node no host (serviço `tools`, perfil `tools`):
@@ -78,12 +88,14 @@ pnpm format         # aplica Prettier
 
 ## Acesso
 
-| Serviço | Endereço no host                     | Credenciais                               |
-| ------- | ------------------------------------ | ----------------------------------------- |
-| MySQL   | `127.0.0.1:3307` (`MYSQL_HOST_PORT`) | `MYSQL_USER` / `MYSQL_PASSWORD` do `.env` |
-| Redis   | `127.0.0.1:6380` (`REDIS_HOST_PORT`) | sem senha em desenvolvimento              |
+| Serviço | Endereço no host                                                  | Credenciais                                         |
+| ------- | ----------------------------------------------------------------- | --------------------------------------------------- |
+| API     | `http://127.0.0.1:3000` (`API_PORT`)                              | rotas de negócio em `/api/v1` (a partir do PASSO 6) |
+| Health  | `http://127.0.0.1:3000/health` · `/health/live` · `/health/ready` | —                                                   |
+| MySQL   | `127.0.0.1:3307` (`MYSQL_HOST_PORT`)                              | `MYSQL_USER` / `MYSQL_PASSWORD` do `.env`           |
+| Redis   | `127.0.0.1:6380` (`REDIS_HOST_PORT`)                              | sem senha em desenvolvimento                        |
 
-As portas são publicadas apenas em `127.0.0.1`. Usuário inicial da plataforma: `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD` (criado pelo seed). A API (PASSO 4) e o frontend (PASSO 5) ainda não existem.
+As portas são publicadas apenas em `127.0.0.1`. Usuário inicial da plataforma: `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD` (criado pelo seed). O frontend chega no PASSO 5.
 
 ## Testes
 
@@ -93,5 +105,6 @@ docker compose up -d --wait
 docker compose run --rm tools pnpm test:integration   # integração: MySQL (<db>_test) + Redis (db 15)
 ```
 
-- Pacotes (`packages/*`): Vitest. Testes de integração nunca usam o banco de desenvolvimento.
-- Backend: Jest (a partir do PASSO 4). Frontend: Vitest + React Testing Library (PASSO 5). E2E: Playwright (PASSO 35).
+- Pacotes (`packages/*`): Vitest. Backend (`apps/api`): Jest em modo ESM (`src/**/*.spec.ts` e `test/**/*.e2e-spec.ts`).
+- Testes de integração nunca usam o banco de desenvolvimento.
+- Frontend: Vitest + React Testing Library (PASSO 5). E2E: Playwright (PASSO 35).

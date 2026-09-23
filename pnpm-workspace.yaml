@@ -1,7 +1,14 @@
 packages:
   - apps/*
   - packages/*
+# Scripts de instalação: aprovados apenas quando necessários.
 allowBuilds:
   '@prisma/engines': true
+  '@swc/core': true
   esbuild: true
   prisma: true
+  unrs-resolver: true
+  # Negados: watcher nativo do @swc/cli (o watch é feito pelo nodemon) e
+  # acelerador opcional do msgpackr (BullMQ usa o fallback em JavaScript).
+  '@parcel/watcher': false
+  msgpackr-extract: false
