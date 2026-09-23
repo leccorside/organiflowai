@@ -1,0 +1,77 @@
+# Ambiente de desenvolvimento — `docker compose up -d`
+# Os serviços backend/worker/scheduler (PASSO 4) e frontend (PASSO 5) são adicionados
+# quando os respectivos apps existirem.
+name: aom
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?defina MYSQL_DATABASE no .env}
+      MYSQL_USER: ${MYSQL_USER:?defina MYSQL_USER no .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?defina MYSQL_PASSWORD no .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?defina MYSQL_ROOT_PASSWORD no .env}
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+    ports:
+      - '127.0.0.1:${MYSQL_HOST_PORT:-3307}:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # -h 127.0.0.1 força TCP: só fica saudável após o fim da inicialização
+      # (o servidor temporário do entrypoint roda sem rede).
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    # AOF para durabilidade das filas; `noeviction` é obrigatório para o BullMQ.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - '127.0.0.1:${REDIS_HOST_PORT:-6380}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Ferramentas do monorepo (pnpm, lint, testes) sem Node no host.
+  # Uso: docker compose run --rm tools pnpm install
+  tools:
+    profiles: [tools]
+    build:
+      context: .
+      target: dev
+    working_dir: /workspace
+    environment:
+      TZ: UTC
+    volumes:
+      - .:/workspace
+      - pnpm_store:/pnpm/store
+      # node_modules ficam em volumes nomeados (Linux), nunca no bind mount do host:
+      # evita binários incompatíveis com o SO do host e a lentidão de I/O no Windows/macOS.
+      - node_modules:/workspace/node_modules
+      - node_modules_config:/workspace/packages/config/node_modules
+      - node_modules_types:/workspace/packages/types/node_modules
+      - node_modules_shared:/workspace/packages/shared/node_modules
+    stdin_open: true
+    tty: true
+
+volumes:
+  mysql_data:
+  redis_data:
+  pnpm_store:
+  node_modules:
+  node_modules_config:
+  node_modules_types:
+  node_modules_shared:

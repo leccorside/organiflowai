@@ -3,7 +3,7 @@
 > Documentação técnica principal do projeto **AI Organic Marketing Automation**.
 > Deve ser atualizada a cada alteração relevante; código e documentação não podem ficar inconsistentes.
 >
-> **Status atual:** PASSO 1 concluído — monorepo, tooling e pacotes compartilhados. Itens marcados como _(planejado)_ ainda não existem.
+> **Status atual:** PASSO 2 concluído — monorepo, tooling, pacotes compartilhados e infraestrutura Docker (MySQL, Redis, imagem do monorepo, serviço `tools`). Itens marcados como _(planejado)_ ainda não existem.
 
 ---
 
@@ -106,6 +106,9 @@ Pacotes compartilhados (`packages/*`) contêm apenas código **puro e agnóstico
 ├── package.json                 # scripts raiz e ferramentas de qualidade
 ├── pnpm-workspace.yaml          # workspaces (apps/*, packages/*) + allowBuilds
 ├── pnpm-lock.yaml
+├── Dockerfile                   # multi-stage do monorepo (base, dev, build, validate)
+├── docker-compose.yml           # mysql, redis, tools
+├── .dockerignore
 ├── .env.example · .editorconfig · .gitattributes · .gitignore · .nvmrc
 ├── .prettierrc.json · .prettierignore
 ├── README.md · DOCUMENTACAO.md · CONTEXTO.md · PASSOS.md · PROMPT.md
@@ -127,7 +130,9 @@ _(planejado — PASSO 3)_ MySQL 8 + Prisma. Convenções: UUIDs, timestamps, sof
 
 ## 9. Redis
 
-_(planejado — PASSO 3)_ Cache, sessões, locks distribuídos, rate limit, filas, scheduler, prevenção de execuções duplicadas, estado do circuit breaker e health checks temporários.
+Container disponível desde o PASSO 2 (ver §11): Redis 8, persistência AOF (`appendonly yes`) e `maxmemory-policy noeviction` — obrigatório para o BullMQ (o Redis nunca pode descartar chaves de jobs).
+
+_(planejado — PASSO 3)_ Cliente compartilhado para cache, sessões, locks distribuídos, rate limit, filas, scheduler, prevenção de execuções duplicadas, estado do circuit breaker e health checks temporários.
 
 ## 10. Filas
 
@@ -139,13 +144,47 @@ Políticas: retry, backoff exponencial, dead letter, idempotência, timeout e co
 
 ## 11. Docker
 
-_(planejado — PASSO 2)_ `docker-compose.yml` com `frontend`, `backend`, `mysql`, `redis`, `worker`, `scheduler` (e `nginx` quando necessário). `backend`, `worker` e `scheduler` usam a mesma imagem de `apps/api` com comandos diferentes. Execução via `docker compose up -d`.
+O projeto roda via `docker compose up -d` (nome do projeto Compose: `aom`). Comandos do dia a dia no `README.md`.
 
-Até o PASSO 2, a validação roda em container efêmero `node:24-alpine` (comando no `README.md`), copiando o repositório sem `node_modules` para dentro do container.
+### `docker-compose.yml`
+
+| Serviço | Imagem / build       | Porta no host                             | Healthcheck                              | Volume(s)                                           |
+| ------- | -------------------- | ----------------------------------------- | ---------------------------------------- | --------------------------------------------------- |
+| `mysql` | `mysql:8.4` (LTS)    | `127.0.0.1:${MYSQL_HOST_PORT:-3307}→3306` | `mysqladmin ping -h 127.0.0.1` (via TCP) | `mysql_data`                                        |
+| `redis` | `redis:8-alpine`     | `127.0.0.1:${REDIS_HOST_PORT:-6380}→6379` | `redis-cli ping`                         | `redis_data`                                        |
+| `tools` | `Dockerfile` → `dev` | —                                         | —                                        | bind `.` + `pnpm_store` + volumes de `node_modules` |
+
+- **MySQL**: `utf8mb4` / `utf8mb4_0900_ai_ci`, `default-time-zone=+00:00` e `TZ=UTC`. As variáveis `MYSQL_*` são **obrigatórias** (`${VAR:?mensagem}`): sem `.env`, o Compose falha com mensagem explícita em vez de subir com senha vazia. O healthcheck usa `-h 127.0.0.1` para forçar TCP: o servidor temporário do entrypoint roda sem rede, então o container só fica saudável após o fim da inicialização.
+- **Redis**: `--appendonly yes` e `--maxmemory-policy noeviction` (exigência do BullMQ). Sem senha em desenvolvimento (porta só em `127.0.0.1`); autenticação será tratada no hardening (PASSO 37).
+- **Portas** publicadas apenas em `127.0.0.1` (não expostas na rede local). Os padrões 3307/6380 evitam conflito com instalações/containers já usando 3306/6379.
+- **`tools`** (perfil `tools`, não sobe no `up -d`): executa pnpm, lint, testes e build sem Node no host. O código é montado por bind mount; os `node_modules` ficam em **volumes nomeados** (Linux), evitando binários nativos incompatíveis com o host e a lentidão de I/O de bind mounts no Windows/macOS. Cada novo pacote/app do monorepo precisa de um volume `node_modules_<nome>` correspondente.
+
+### `Dockerfile` (multi-stage, único para o monorepo)
+
+| Target     | Conteúdo                                                                                                    | Uso                                      |
+| ---------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `base`     | `node:24-alpine`, `TZ=UTC`, corepack + pnpm na versão exata de `packageManager`, store em `/pnpm/store`     | Base de todos os targets                 |
+| `dev`      | `base` sem código (montado em runtime)                                                                      | Serviço `tools`                          |
+| `build`    | `pnpm fetch` (camada dependente só do lockfile) → cópia do código → `pnpm install --offline` → `pnpm build` | Base das imagens dos apps (PASSOS 4 e 5) |
+| `validate` | `build` + `format:check`, `lint`, `typecheck`, `test`                                                       | CI: `docker build --target validate .`   |
+
+O store do pnpm usa cache do BuildKit (`--mount=type=cache,id=aom-pnpm-store`), acelerando rebuilds.
+
+### Serviços planejados
+
+- **PASSO 4**: `backend`, `worker` e `scheduler` — mesma imagem de `apps/api` (target próprio no `Dockerfile`), comandos diferentes (ADR-003).
+- **PASSO 5**: `frontend` (Vite em dev).
+- **Hot reload** (PASSOS 4/5): em Docker Desktop no Windows, eventos de arquivo do host não chegam ao container via bind mount; os watchers (Nest/Vite) deverão usar polling em desenvolvimento.
+- **nginx**: não é necessário em desenvolvimento (cada serviço expõe sua porta). Será avaliado na preparação para produção (PASSO 40) como reverse proxy/TLS.
 
 ## 12. Serviços
 
-Nenhum serviço em execução ainda.
+| Serviço                              | Status                           |
+| ------------------------------------ | -------------------------------- |
+| `mysql`                              | Disponível (`docker compose up`) |
+| `redis`                              | Disponível (`docker compose up`) |
+| `tools`                              | Disponível (sob demanda)         |
+| Aplicação (api/worker/scheduler/web) | Planejado (PASSOS 4 e 5)         |
 
 ## 13. Módulos e pacotes
 
@@ -224,6 +263,7 @@ Já aplicado:
 - Lint proíbe `console` (evita vazamento acidental de dados em logs não estruturados).
 - `maskSecret` pronto para exibição segura de API Keys.
 - pnpm só executa scripts de instalação de dependências explicitamente aprovadas (`allowBuilds`: apenas `esbuild`) e valida o lockfile contra as políticas de supply chain.
+- Docker: portas de MySQL/Redis publicadas só em `127.0.0.1`; `.env` fora do contexto de build (`.dockerignore`); variáveis de senha do MySQL obrigatórias, sem valores padrão.
 
 _(planejado)_ Helmet, CORS restritivo, rate limiting, validação, sanitização, proteção contra injection, CSRF quando aplicável, hash seguro de senhas, criptografia das chaves, logs sem secrets, menor privilégio, proteção SSRF, validação de webhooks.
 
@@ -235,8 +275,9 @@ Definidas em `.env.example` (copiar para `.env`). Credenciais reais nunca versio
 | ----------------------------------------------------------------------- | ----------------------------------------------------- | ----- |
 | `NODE_ENV`                                                              | Ambiente de execução                                  | 2     |
 | `TZ`                                                                    | Sempre `UTC` (timezone de exibição é por organização) | 2     |
-| `API_PORT`, `WEB_PORT`                                                  | Portas expostas no host                               | 2     |
-| `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD` | Container MySQL                                       | 2/3   |
+| `MYSQL_HOST_PORT`, `REDIS_HOST_PORT`                                    | Portas do MySQL/Redis no host (padrão 3307/6380)      | 2     |
+| `API_PORT`, `WEB_PORT`                                                  | Portas da API e do frontend no host                   | 4/5   |
+| `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD` | Container MySQL (obrigatórias no compose)             | 2     |
 | `DATABASE_URL`                                                          | Conexão Prisma                                        | 3     |
 | `REDIS_URL`                                                             | Conexão Redis/BullMQ                                  | 3     |
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`                               | Assinatura de tokens                                  | 6     |
@@ -260,6 +301,8 @@ Scripts da raiz:
 | `pnpm typecheck`    | `tsc --noEmit` em cada pacote                            |
 | `pnpm test`         | Testes de cada pacote (`pnpm -r test`)                   |
 | `pnpm validate`     | Todos os anteriores, em sequência                        |
+
+Via Docker: `docker compose run --rm tools pnpm validate` (código montado) ou `docker build --target validate .` (imagem limpa, estilo CI).
 
 Testes existentes (Vitest):
 
@@ -286,13 +329,18 @@ _(planejado — PASSO 40)_
 
 ## 29. Troubleshooting
 
-| Sintoma                                                                         | Causa                                                                                         | Solução                                                                                   |
-| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `ERR_PNPM_IGNORED_BUILDS: Ignored build scripts: esbuild`                       | pnpm 12 bloqueia scripts de instalação não aprovados; `onlyBuiltDependencies` não é mais lido | Aprovar com `pnpm approve-builds <pacote>` (grava `allowBuilds` no `pnpm-workspace.yaml`) |
-| Peer dependency de `typescript-eslint` com TypeScript 7                         | typescript-eslint 8 suporta TS `<6.1`                                                         | Manter TypeScript `~6.0` em todos os pacotes                                              |
-| `TS5101: Option 'baseUrl' is deprecated` no `DTS Build` do tsup                 | O tsup injeta `baseUrl` ao gerar `.d.ts`                                                      | `ignoreDeprecations: "6.0"` em `library.json` (já aplicado)                               |
-| App não encontra `@aom/types`/`@aom/shared` (`Cannot find module .../dist/...`) | Pacotes ainda não compilados                                                                  | `pnpm build`                                                                              |
-| Prettier acusa todos os arquivos no Windows                                     | Arquivos com CRLF                                                                             | `.gitattributes` força LF; rodar `pnpm format`                                            |
+| Sintoma                                                                         | Causa                                                                                                    | Solução                                                                                   |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `ERR_PNPM_IGNORED_BUILDS: Ignored build scripts: esbuild`                       | pnpm 12 bloqueia scripts de instalação não aprovados; `onlyBuiltDependencies` não é mais lido            | Aprovar com `pnpm approve-builds <pacote>` (grava `allowBuilds` no `pnpm-workspace.yaml`) |
+| Peer dependency de `typescript-eslint` com TypeScript 7                         | typescript-eslint 8 suporta TS `<6.1`                                                                    | Manter TypeScript `~6.0` em todos os pacotes                                              |
+| `TS5101: Option 'baseUrl' is deprecated` no `DTS Build` do tsup                 | O tsup injeta `baseUrl` ao gerar `.d.ts`                                                                 | `ignoreDeprecations: "6.0"` em `library.json` (já aplicado)                               |
+| App não encontra `@aom/types`/`@aom/shared` (`Cannot find module .../dist/...`) | Pacotes ainda não compilados                                                                             | `pnpm build`                                                                              |
+| Prettier acusa todos os arquivos no Windows                                     | Arquivos com CRLF                                                                                        | `.gitattributes` força LF; rodar `pnpm format`                                            |
+| `required variable MYSQL_DATABASE is missing a value`                           | `.env` ausente ou incompleto                                                                             | `cp .env.example .env` e preencher                                                        |
+| `Bind for 127.0.0.1:3307 failed: port is already allocated`                     | Porta do host em uso por outro processo/container                                                        | Alterar `MYSQL_HOST_PORT` / `REDIS_HOST_PORT` no `.env`                                   |
+| MySQL `Access denied` após trocar a senha no `.env`                             | O volume `mysql_data` já foi inicializado com a senha antiga (as `MYSQL_*` só valem na 1ª inicialização) | Alterar a senha via SQL, ou recriar o volume: `docker compose down -v` (apaga os dados)   |
+| `pnpm fetch`: `unexpected argument '--frozen-lockfile'`                         | No pnpm 12 o `fetch` sempre usa o lockfile e não aceita a flag                                           | Usar `pnpm fetch` sem a flag (já aplicado no `Dockerfile`)                                |
+| Serviço `tools` sem dependências (`command not found`)                          | Volumes de `node_modules` vazios                                                                         | `docker compose run --rm tools pnpm install`                                              |
 
 ## 30. Decisões arquiteturais importantes
 
@@ -307,3 +355,7 @@ _(planejado — PASSO 40)_
 | ADR-004 | 2026-09-23 | Pacotes compartilhados com **build dual ESM + CJS** (tsup) e código puro, sem dependência de runtime | O frontend (Vite) consome ESM e o NestJS tradicionalmente CJS; código puro mantém os pacotes utilizáveis em ambos                                                                                         |
 | ADR-005 | 2026-09-23 | **TypeScript `~6.0`** em vez do TS 7 (nativo)                                                        | typescript-eslint 8 exige `<6.1` e o tsup depende da API JS do compilador. Reavaliar quando o ecossistema suportar TS 7                                                                                   |
 | ADR-006 | 2026-09-23 | **Vitest** nos pacotes compartilhados; Jest mantido para o backend (PASSO 4)                         | Pacotes são ESM puros, e o Vitest os testa sem configuração extra; o frontend também usará Vitest. A especificação exige Jest apenas no backend                                                           |
+| ADR-007 | 2026-09-23 | **Dockerfile único multi-stage** na raiz para todo o monorepo                                        | Os apps dependem dos pacotes do workspace e de um único lockfile; um Dockerfile por app duplicaria a instalação. Cada app terá seu target de runtime                                                      |
+| ADR-008 | 2026-09-23 | **Serviços de aplicação entram no compose junto com os apps** (PASSOS 4 e 5), não no PASSO 2         | Containers sem app seriam placeholders (vedado pela especificação). O PASSO 2 entrega a infraestrutura validável: MySQL, Redis, imagem base e `tools`                                                     |
+| ADR-009 | 2026-09-23 | `node_modules` em **volumes nomeados**, código via bind mount                                        | Evita binários nativos do Linux no host Windows (e vice-versa) e I/O lento de bind mount; o host permanece sem `node_modules`                                                                             |
+| ADR-010 | 2026-09-23 | **MySQL 8.4 LTS** e **Redis 8** com AOF + `noeviction`                                               | 8.4 é a linha LTS do MySQL 8 (requisito "MySQL 8+"); `noeviction` é exigido pelo BullMQ e o AOF preserva jobs entre reinícios                                                                             |

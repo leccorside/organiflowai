@@ -11,15 +11,15 @@ Regras:
 
 ---
 
-Último passo concluído: PASSO 1
-Próximo passo: PASSO 2
+Último passo concluído: PASSO 2
+Próximo passo: PASSO 3
 
 ---
 
 ## Visão geral
 
 - [x] PASSO 1 — Planejamento, arquitetura e estrutura inicial
-- [ ] PASSO 2 — Docker e ambiente de desenvolvimento
+- [x] PASSO 2 — Docker e ambiente de desenvolvimento
 - [ ] PASSO 3 — Banco MySQL, Prisma e Redis
 - [ ] PASSO 4 — Backend base e padrões arquiteturais
 - [ ] PASSO 5 — Frontend base e Design System
@@ -76,12 +76,16 @@ Próximo passo: PASSO 2
 
 ### PASSO 2 — Docker e ambiente de desenvolvimento
 
-- [ ] `docker-compose.yml` com `frontend`, `backend`, `mysql`, `redis`, `worker`, `scheduler`
-- [ ] Dockerfiles multi-stage (dev e prod) para api e web (`worker` e `scheduler` usam a imagem da api com outro comando)
-- [ ] Volumes, redes e healthchecks dos containers
-- [ ] Hot reload em desenvolvimento via Docker
-- [ ] `nginx` (se necessário) como reverse proxy
-- [ ] Validar `docker compose up -d` com todos os serviços saudáveis
+- [x] `docker-compose.yml` com `mysql` (8.4 LTS) e `redis` (8, AOF + `noeviction`), portas só em `127.0.0.1`
+- [x] `Dockerfile` multi-stage único do monorepo (`base`, `dev`, `build`, `validate`) — ADR-007
+- [x] Serviço `tools` (perfil) para pnpm/lint/testes sem Node no host, `node_modules` em volumes nomeados — ADR-009
+- [x] Volumes persistentes, rede padrão do projeto e healthchecks
+- [x] Variáveis obrigatórias do MySQL com falha explícita; `.env.example` com portas do host
+- [x] `.dockerignore`
+- [x] `nginx` avaliado: desnecessário em desenvolvimento; reavaliar no PASSO 40
+- [x] Validar `docker compose up -d` com todos os serviços saudáveis, persistência após restart e `pnpm validate` via Docker
+- Movido para o PASSO 4: targets/serviços `backend`, `worker`, `scheduler` e hot reload da API — ADR-008
+- Movido para o PASSO 5: target/serviço `frontend` e hot reload do web — ADR-008
 
 ### PASSO 3 — Banco MySQL, Prisma e Redis
 
@@ -102,6 +106,8 @@ Próximo passo: PASSO 2
 - [ ] Endpoints `/health`, `/health/live`, `/health/ready`
 - [ ] Padrão de repositories/services, paginação e respostas
 - [ ] Infraestrutura BullMQ básica (registro das filas)
+- [ ] Entrypoints `main.ts`, `main.worker.ts`, `main.scheduler.ts` (ADR-003)
+- [ ] Targets no `Dockerfile` (dev e produção) e serviços `backend`, `worker`, `scheduler` no compose, com healthcheck e hot reload (polling no Windows)
 - [ ] Testes Jest base
 
 ### PASSO 5 — Frontend base e Design System
@@ -113,6 +119,7 @@ Próximo passo: PASSO 2
 - [ ] Componentes: toast, modal, drawer, skeleton, empty states, tabelas avançadas
 - [ ] Estrutura i18n (pt/en/es) desde o início
 - [ ] PWA-ready
+- [ ] Target no `Dockerfile` (dev e produção) e serviço `frontend` no compose, com hot reload (polling no Windows)
 - [ ] Testes Vitest + React Testing Library base
 
 ### PASSO 6 — Autenticação e usuários
@@ -328,3 +335,4 @@ Próximo passo: PASSO 2
 
 - 2026-09-23 — Roadmap inicial criado a partir do `PROMPT.md` (seção 84). Nenhum passo iniciado.
 - 2026-09-23 (PASSO 1) — Removido `apps/worker` da estrutura: worker e scheduler passam a ser entrypoints separados de `apps/api` (mesma base de código, containers distintos). Motivo: ambos dependem dos mesmos módulos de domínio (IA, publicações, Prisma); um app separado exigiria duplicar ou extrair esses módulos para pacotes. Ajustado o PASSO 2 (Dockerfiles para api e web). Ver ADR-003 em `DOCUMENTACAO.md`.
+- 2026-09-23 (PASSO 2) — Serviços de aplicação (`backend`, `worker`, `scheduler`, `frontend`) e respectivos targets do `Dockerfile`/hot reload movidos do PASSO 2 para os PASSOS 4 e 5, onde os apps são criados. Motivo: dependência técnica — não há app para empacotar no PASSO 2, e containers sem app seriam placeholders (vedado pela especificação). O PASSO 2 entregou a infraestrutura validável (MySQL, Redis, imagem do monorepo e serviço `tools`). Ver ADR-008.

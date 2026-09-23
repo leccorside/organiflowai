@@ -15,7 +15,7 @@ Permitir que uma empresa cadastre a marca, configure canais e provedores de IA (
 
 ## Arquitetura atual
 
-Monorepo **pnpm workspaces** com a fundação de tooling e três pacotes compartilhados. Ainda **não existem apps** (api/web) nem serviços em execução.
+Monorepo **pnpm workspaces** com a fundação de tooling e três pacotes compartilhados, mais a infraestrutura Docker: MySQL 8.4 e Redis 8 via `docker compose up -d`, `Dockerfile` multi-stage do monorepo e serviço `tools` para rodar pnpm sem Node no host. Ainda **não existem apps** (api/web).
 
 Arquitetura planejada: Modular Monolith (NestJS) + processos worker e scheduler (entrypoints separados da própria api, em containers distintos) + frontend React, tudo em Docker.
 
@@ -31,12 +31,18 @@ Arquitetura planejada: Modular Monolith (NestJS) + processos worker e scheduler 
 | Backend          | NestJS (REST + WebSocket/SSE)                                                                      | PASSO 4    |
 | Banco            | MySQL 8+ com Prisma                                                                                | PASSO 3    |
 | Cache/filas      | Redis + BullMQ                                                                                     | PASSO 3/23 |
-| Infra            | Docker / docker compose                                                                            | PASSO 2    |
+| Infra            | Docker / docker compose, MySQL 8.4 LTS, Redis 8                                                    | Em uso     |
 | Testes           | Jest (backend), Vitest + RTL (frontend), Playwright (E2E)                                          | Planejado  |
 
 ## Serviços existentes
 
-Nenhum ainda (docker compose chega no PASSO 2).
+| Serviço | Onde                                      | Observação                                                      |
+| ------- | ----------------------------------------- | --------------------------------------------------------------- |
+| `mysql` | `127.0.0.1:3307` (`MYSQL_HOST_PORT`)      | utf8mb4, timezone `+00:00`, volume `mysql_data`                 |
+| `redis` | `127.0.0.1:6380` (`REDIS_HOST_PORT`)      | AOF + `noeviction` (BullMQ), volume `redis_data`                |
+| `tools` | `docker compose run --rm tools <comando>` | Perfil `tools`; bind mount do código, `node_modules` em volumes |
+
+Portas padrão fora de 3306/6379 porque o host já tem outro projeto usando 6379.
 
 ## Estrutura principal
 
@@ -48,6 +54,8 @@ packages/
   shared/             # @aom/shared — utilitários puros (maskSecret)
 eslint.config.mjs     # lint único na raiz, type-aware
 pnpm-workspace.yaml   # workspaces + allowBuilds (esbuild)
+Dockerfile            # multi-stage: base, dev, build, validate
+docker-compose.yml    # mysql, redis, tools
 ```
 
 ## Funcionalidades implementadas
@@ -55,6 +63,7 @@ pnpm-workspace.yaml   # workspaces + allowBuilds (esbuild)
 - `@aom/types`: `ROLES`, `CONTENT_STATUSES`, `AUTONOMY_MODES`, `CHANNEL_TYPES`, `AI_PROVIDERS`, `DEFAULT_AI_PROVIDER_PRIORITY`, `CIRCUIT_STATES`, `QUEUE_NAMES` (+ tipos derivados).
 - `@aom/shared`: `maskSecret()` — exibe API Keys como `••••••••••abcd`, com máscara de tamanho fixo e mascaramento total de segredos curtos.
 - Scripts raiz: `pnpm validate` (format:check → lint → build → typecheck → test).
+- Docker: `docker compose up -d` (MySQL + Redis saudáveis), `docker compose run --rm tools pnpm validate`, `docker build --target validate .` (CI).
 
 ## Decisões tomadas
 
@@ -62,6 +71,7 @@ pnpm-workspace.yaml   # workspaces + allowBuilds (esbuild)
 - Execução estritamente por passos, somente com autorização explícita (`INICIE O PASSO X`).
 - Commits e pushes feitos **manualmente pelo usuário**; a IA apenas sugere a mensagem (Conventional Commits).
 - ADR-001 a ADR-006 em `DOCUMENTACAO.md` §30 (pnpm workspaces; escopo `@aom`; worker/scheduler como entrypoints da api; build dual ESM/CJS dos pacotes; TypeScript 6.0; Vitest nos pacotes compartilhados).
+- ADR-007 a ADR-010 (PASSO 2): Dockerfile único multi-stage; serviços de aplicação entram no compose junto com os apps (PASSOS 4/5); `node_modules` em volumes nomeados; MySQL 8.4 LTS + Redis 8 com AOF e `noeviction`.
 
 ## Padrões adotados
 
@@ -74,7 +84,9 @@ pnpm-workspace.yaml   # workspaces + allowBuilds (esbuild)
 - Toda chamada de IA passa pelo `AIProviderManager` (nenhum SDK espalhado).
 - Regras de negócio em services, nunca em controllers.
 - Configurações operacionais não hardcoded.
-- Validação executada em container `node:24-alpine` sobre cópia limpa do repositório (sem `node_modules` do host).
+- Validação via Docker: `docker build --target validate .` (limpa) e `docker compose run --rm tools pnpm validate` (código montado). O host não tem `node_modules`.
+- Validação de compose em projeto isolado (`-p aom-validate --env-file .env.example`, removido com `down -v` ao final) para não criar volumes com senhas de exemplo no projeto real `aom`.
+- Todo novo pacote/app do monorepo precisa de um volume `node_modules_<nome>` no serviço `tools` (e nos serviços de app).
 
 ## Regras importantes
 
@@ -104,7 +116,7 @@ Ainda não implementada. Contratos já definidos em `@aom/types` (`AI_PROVIDERS`
 | `@aom/config`                  | Concluído    |
 | `@aom/types`                   | Concluído    |
 | `@aom/shared`                  | Concluído    |
-| Docker                         | Não iniciado |
+| Docker (mysql, redis, tools)   | Concluído    |
 | api / worker / scheduler / web | Não iniciado |
 
 ## Limitações conhecidas
@@ -112,18 +124,22 @@ Ainda não implementada. Contratos já definidos em `@aom/types` (`AI_PROVIDERS`
 - **TypeScript fixado em `~6.0`**: o TS 7 (nativo) é o `latest`, mas o typescript-eslint 8 exige `<6.1` e o tsup depende da API JS do compilador. Reavaliar quando o ecossistema suportar TS 7.
 - **`ignoreDeprecations: "6.0"`** em `packages/config/tsconfig/library.json`: o tsup injeta `baseUrl` (depreciado no TS 6) ao gerar `.d.ts`. O projeto não usa opções depreciadas; remover ao migrar o bundler (ex.: tsdown) ou quando o tsup corrigir.
 - Os pacotes `@aom/types` e `@aom/shared` precisam de `pnpm build` antes de serem consumidos por apps (exports apontam para `dist/`).
+- Redis sem senha em desenvolvimento (porta só em `127.0.0.1`); autenticação no hardening (PASSO 37).
+- Em Docker Desktop no Windows, eventos de arquivo do host não chegam ao container: hot reload dos apps (PASSOS 4/5) precisará de polling.
+- As variáveis `MYSQL_*` só valem na primeira inicialização do volume `mysql_data`; trocar a senha depois exige SQL ou `docker compose down -v`.
 
 ## Último passo concluído
 
-**PASSO 1 — Planejamento, arquitetura e estrutura inicial** (2026-09-23).
+**PASSO 2 — Docker e ambiente de desenvolvimento** (2026-09-23).
 
 ## Próximo passo
 
-**PASSO 2 — Docker e ambiente de desenvolvimento** (aguardando autorização: `INICIE O PASSO 2`).
+**PASSO 3 — Banco MySQL, Prisma e Redis** (aguardando autorização: `INICIE O PASSO 3`).
 
 ## Pendências
 
-- Nenhuma do PASSO 1.
+- **Decisão no início do PASSO 3**: o Prisma (schema, migrations, seeds) e o cliente Redis precisam de um pacote hospedeiro, mas `apps/api` só nasce no PASSO 4. Opções: criar `packages/database` (Prisma + seeds, consumido pela api/worker/scheduler) ou antecipar o esqueleto de `apps/api` para o PASSO 3.
+- O usuário precisa criar o `.env` (`cp .env.example .env`) antes do primeiro `docker compose up -d` no projeto real.
 
 ## Bugs conhecidos
 
@@ -135,6 +151,8 @@ Nenhum.
 - Stack obrigatória: React + NestJS + MySQL/Prisma + Redis/BullMQ + Docker.
 - Execução por passos com parada obrigatória e commits manuais.
 - Worker e scheduler compartilham a base de código de `apps/api` (ADR-003) — não criar `apps/worker` duplicando módulos de domínio.
+- Redis com `maxmemory-policy noeviction` (exigência do BullMQ) — nunca trocar para uma política com eviction.
+- Datas e servidores em UTC (MySQL `default-time-zone=+00:00`, `TZ=UTC` nos containers).
 
 ---
 
@@ -142,3 +160,4 @@ Nenhum.
 
 - 2026-09-23 — Criados `DOCUMENTACAO.md`, `CONTEXTO.md` e `PASSOS.md` a pedido do usuário, antes do PASSO 1.
 - 2026-09-23 — **PASSO 1 concluído**: monorepo pnpm, tooling (TS/ESLint/Prettier), pacotes `@aom/config`, `@aom/types`, `@aom/shared`, `.env.example`, `README.md`, ADRs. Erros encontrados e corrigidos: (1) pnpm 12 não reconhece mais `onlyBuiltDependencies` → substituído por `allowBuilds` via `pnpm approve-builds esbuild`; (2) TS 7 incompatível com typescript-eslint/tsup → fixado TS `~6.0`; (3) tsup falhava no `.d.ts` por `baseUrl` depreciado → `ignoreDeprecations: "6.0"` no tsconfig de bibliotecas.
+- 2026-09-23 — **PASSO 2 concluído**: `docker-compose.yml` (mysql 8.4, redis 8, tools), `Dockerfile` multi-stage (base/dev/build/validate), `.dockerignore`, portas do host no `.env.example`. Validado: compose falha sem `.env`; mysql e redis saudáveis; utf8mb4 + UTC confirmados; `noeviction` + AOF confirmados; dados persistem após restart; `pnpm validate` passa via `tools` e via `docker build --target validate`. Erro corrigido: `pnpm fetch --frozen-lockfile` não existe no pnpm 12 → flag removida. Porta 6379 do host ocupada por outro projeto → padrões 3307/6380. Serviços de app movidos para os PASSOS 4/5 (ADR-008).
